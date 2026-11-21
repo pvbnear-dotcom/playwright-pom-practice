@@ -9,3 +9,6 @@ node_modules/
 
 # Env file
 .env
+
+# Next steps
+next_steps.txt

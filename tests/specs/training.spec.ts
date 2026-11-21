@@ -49,11 +49,6 @@ test("checkout and pay for a 'Sheet Sander'", async ({
 }) => {
   await expect(cartCheckoutPage.linePrice).toHaveText("$58.48");
   await cartCheckoutPage.proceedToLogin();
-  const email = process.env.USEREMAIL;
-  if (!email) throw new Error("USEREMAIL is not set in .env");
-  const password = process.env.PASSWORD;
-  if (!password) throw new Error("PASSWORD is not set in .env");
-  await loginComponent.login(email, password);
   await expect(loginComponent.loginConfirmationMsg).toContainText(
     "Hello Jane Doe, you are already logged in. You can proceed to checkout.",
   );

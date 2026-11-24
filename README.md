@@ -2,10 +2,11 @@
 
 ![Playwright Tests](https://github.com/pvbnear-dotcom/playwright-pom-practice/actions/workflows/playwright.yml/badge.svg)
 
-End-to-end UI tests for the demo e-commerce site
+End-to-end UI tests for the demo e-commerce application
 [Practice Software Testing](https://practicesoftwaretesting.com/), written with
 **Playwright** and **TypeScript** and organized with the **Page Object Model (POM)**
-and **custom fixtures**.
+and **custom fixtures**. The tests run against a locally hosted copy of the
+application (see [Test environment](#test-environment)).
 
 This is a portfolio/study project that shows the basics of building a test
 suite that is easy to read and maintain.
@@ -37,6 +38,29 @@ suite that is easy to read and maintain.
   already logged in without filling in the login form again. A test can opt out
   with `test.use({ storageState: { cookies: [], origins: [] } })`. The file is
   git-ignored because it holds a real session token.
+- **A controlled test environment.** The suite runs against a local copy of
+  the application instead of the public site (see below).
+
+## Test environment
+
+The public site at practicesoftwaretesting.com has bot protection that blocks
+scripted logins, so the login step failed in automated runs. Instead of working
+around the protection, the suite runs against a locally hosted copy of the
+application:
+
+- **Locally:** clone the
+  [Toolshop app](https://github.com/testsmith-io/practice-software-testing),
+  start it with `docker compose up -d`, seed the database with
+  `docker compose exec laravel-api php artisan migrate:fresh --seed`, and set
+  `BASE_URL=http://localhost:4200` in `.env`. The tests read it through
+  `baseURL`, which falls back to the public site when `BASE_URL` isn't set.
+- **In CI:** the workflow checks out the Toolshop app at a pinned commit,
+  starts its containers, seeds the database, waits until the UI
+  (`localhost:4200`) and API (`localhost:8091`) respond, and then runs the
+  tests with `BASE_URL=http://localhost:4200`.
+  Owning the environment also keeps the tests independent of the public site's
+  uptime and data changes, which is how a real team would avoid one source of
+  flaky tests.
 
 ## Test scenarios
 
@@ -92,12 +116,22 @@ test("search and open a product", async ({ homePage, productPage }) => {
 ### Prerequisites
 
 - Node.js (LTS)
+- Docker (with Docker Compose) to run the local copy of the application
 
 ### Install
 
 ```bash
 npm ci
 npx playwright install --with-deps
+```
+
+### Start the application
+
+```bash
+git clone https://github.com/testsmith-io/practice-software-testing.git toolshop
+cd toolshop
+docker compose up -d
+docker compose exec laravel-api php artisan migrate:fresh --seed
 ```
 
 ### Configure credentials
@@ -126,6 +160,7 @@ npx playwright show-report             # open the last HTML report
 ## CI
 
 The workflow in [.github/workflows/playwright.yml](.github/workflows/playwright.yml)
-installs dependencies and browsers and runs the suite. It reads `USEREMAIL` and
+starts a local copy of the application (see [Test environment](#test-environment)), installs
+dependencies and browsers and runs the suite. It reads `USEREMAIL` and
 `PASSWORD` from repository secrets. The `playwright-report` artifact is kept
 for 30 days.

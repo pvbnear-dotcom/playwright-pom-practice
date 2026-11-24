@@ -1,4 +1,4 @@
-import { Page, Locator, expect } from "@playwright/test";
+import { Page, Locator } from "@playwright/test";
 import { BasePage } from "./base.page";
 
 export type AddressDetails = {
@@ -41,8 +41,10 @@ export class AddressCheckoutPage extends BasePage {
     await this.country.selectOption(country);
     await this.postalCode.fill(postalCode);
     await this.houseNumber.fill(houseNumber);
+    const lookupDone = this.page.waitForResponse(
+      (res) => res.url().includes("/postcode-lookup") && res.ok(),
+    );
     await this.houseNumber.press("Tab");
-    await expect(this.postcodeLookupLoading).toBeVisible();
-    await expect(this.postcodeLookupLoading).toBeHidden();
+    await lookupDone;
   }
 }

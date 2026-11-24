@@ -10,6 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      # Run our own copy of the Toolshop app so tests never hit the public
+      # site (which sits behind a Cloudflare bot check).
+      - name: Check out Toolshop app
+        uses: actions/checkout@v5
+        with:
+          repository: testsmith-io/practice-software-testing
+          # Pinned so upstream changes can't break our CI. Bump deliberately.
+          ref: ae7caecb811dd8952c09d997e69be7cb946ecd44
+          path: toolshop
+
+      - name: Start Toolshop containers
+        working-directory: toolshop
+        run: docker compose -f docker-compose.yml up -d
+
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
@@ -17,11 +32,34 @@ jobs:
         run: npm ci
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
+
+      # Retries until composer has installed vendor/ and the database accepts connections.
+      - name: Seed Toolshop database
+        working-directory: toolshop
+        run: |
+          timeout 600 bash -c 'until docker compose -f docker-compose.yml exec -T laravel-api php artisan migrate:fresh --seed --force; do echo "API not ready, retrying in 10s..."; sleep 10; done'
+
+      - name: Wait for Toolshop API and UI
+        run: |
+          timeout 600 bash -c 'until curl -sf http://localhost:8091/products > /dev/null; do echo "Waiting for API..."; sleep 5; done'
+          timeout 600 bash -c 'until curl -sf http://localhost:4200 > /dev/null; do echo "Waiting for UI..."; sleep 5; done'
+          # Warm up: first requests compile/cache code, so don't let a test pay that cost.
+          curl -s -o /dev/null -w "UI warm-up: %{time_total}s\n" http://localhost:4200
+          curl -s -o /dev/null -w "API warm-up: %{time_total}s\n" http://localhost:8091/products
+
       - name: Run Playwright tests
         run: npx playwright test
         env:
-          USEREMAIL: ${{ secrets.USEREMAIL }}
-          PASSWORD: ${{ secrets.PASSWORD }}
+          BASE_URL: http://localhost:4200
+          # Public demo account created by the Toolshop seeder (see its README).
+          USEREMAIL: customer@practicesoftwaretesting.com
+          PASSWORD: welcome01
+
+      - name: Show Toolshop logs
+        if: failure()
+        working-directory: toolshop
+        run: docker compose -f docker-compose.yml logs --tail=200
+
       - uses: actions/upload-artifact@v6
         if: ${{ !cancelled() }}
         with:

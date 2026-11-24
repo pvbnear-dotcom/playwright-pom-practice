@@ -39,9 +39,17 @@ jobs:
         run: |
           timeout 600 bash -c 'until docker compose -f docker-compose.yml exec -T laravel-api php artisan migrate:fresh --seed --force; do echo "API not ready, retrying in 10s..."; sleep 10; done'
 
+      # composer runs in its own image, where www-data has a different user id
+      # than in the API image, so its chown leaves the API unable to write
+      # storage/ (cache, logs) and every request fails with HTTP 500.
+      # Hand those folders to the API's own www-data user.
+      - name: Fix Toolshop storage permissions
+        working-directory: toolshop
+        run: docker compose -f docker-compose.yml exec -T -u root laravel-api chown -R www-data:www-data storage bootstrap/cache
+
       - name: Wait for Toolshop API and UI
         run: |
-          timeout 600 bash -c 'until curl -sf http://localhost:8091/products > /dev/null; do echo "Waiting for API..."; sleep 5; done'
+          timeout 300 bash -c 'until [ "$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8091/products)" = "200" ]; do echo "Waiting for API... (HTTP $(curl -s -o /dev/null -w "%{http_code}" http://localhost:8091/products))"; sleep 5; done'
           timeout 600 bash -c 'until curl -sf http://localhost:4200 > /dev/null; do echo "Waiting for UI..."; sleep 5; done'
           # Warm up: first requests compile/cache code, so don't let a test pay that cost.
           curl -s -o /dev/null -w "UI warm-up: %{time_total}s\n" http://localhost:4200
@@ -58,7 +66,14 @@ jobs:
       - name: Show Toolshop logs
         if: failure()
         working-directory: toolshop
-        run: docker compose -f docker-compose.yml logs --tail=200
+        run: |
+          docker compose -f docker-compose.yml logs --tail=200
+          echo "--- API response ---"
+          curl -s http://localhost:8091/products | head -c 2000 || true
+          echo; echo "--- Laravel log ---"
+          docker compose -f docker-compose.yml exec -T laravel-api tail -n 50 storage/logs/laravel.log || true
+          echo "--- storage ownership ---"
+          docker compose -f docker-compose.yml exec -T laravel-api ls -ln storage storage/framework || true
 
       - uses: actions/upload-artifact@v6
         if: ${{ !cancelled() }}
